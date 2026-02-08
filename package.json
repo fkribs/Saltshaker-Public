@@ -1,0 +1,110 @@
+{
+  "name": "saltshaker-client",
+  "version": "1.0.2",
+  "description": "A peer-to-peer voice platform with an open-source plugin system for games and real-time apps",
+  "author": "Forrest Kribs",
+  "main": "main.js",
+  "productName": "Saltshaker",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "kill:electron": "taskkill /F /IM electron.exe /T 2>nul || exit /b 0",
+    "start:debug": "npm run kill:electron && set ELECTRON_ENABLE_LOGGING=true&& electron . --inspect=9230 --remote-debugging-port=9223",
+    "start:debug:brk": "npm run kill:electron && set ELECTRON_ENABLE_LOGGING=true&& electron . --inspect-brk=9230 --remote-debugging-port=9223",
+    "build": "electron-builder",
+    "publish": "electron-builder --publish always",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@slippi/slippi-js": "^6.7.0",
+    "adm-zip": "^0.5.16",
+    "electron-log": "^5.1.1",
+    "electron-updater": "^6.1.7",
+    "express": "^4.18.2",
+    "tar": "^7.5.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/node": "^18.18.0",
+    "electron": "^40.2.1",
+    "electron-builder": "^26.7.0",
+    "eslint": "^8.0.0",
+    "typescript": "~5.3.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fkribs/Saltshaker-Releases.git"
+  },
+  "build": {
+    "appId": "com.fkribs.saltshaker",
+    "productName": "Saltshaker",
+    "artifactName": "Saltshaker-${version}-${os}-${arch}.${ext}",
+    "asar": true,
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist{,/**/*}",
+      "!node_modules/.cache{,/**/*}",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/",
+        "to": "assets/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "fkribs",
+        "repo": "Saltshaker-Releases"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Saltshaker-${version}-Windows.exe",
+      "executableName": "Saltshaker",
+      "requestedExecutionLevel": "asInvoker",
+      "signtoolOptions": {
+        "certificateSha1": "3431f953bfd1a7ef47fcf4f785339aafc836c3dc",
+        "signingHashAlgorithms": [
+          "sha256"
+        ],
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      }
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "allowToChangeInstallationDirectory": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "src/assets/icon.png",
+      "artifactName": "Saltshaker-${version}-MacOS.dmg"
+    },
+    "compression": "store"
+  }
+}
