@@ -34,7 +34,7 @@ https://github.com/fkribs/Saltshaker-Releases/releases
 
 Linux builds are not officially supported at this time.
 
-However, advanced users may be able to run Saltshaker by cloning this repository and launching it manually using :contentReference[oaicite:1]{index=1} and :contentReference[oaicite:2]{index=2}.
+However, advanced users may be able to run Saltshaker by cloning this repository and launching it manually using Node.js and Electron.
 
 ### Run from source
 
