@@ -1,27 +1,45 @@
 # SaltshakerClient
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.1.3.
+A peer-to-peer voice platform with an open-source plugin system for games and real-time apps.
 
-## Development server
+This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.1.3 and packaged with :contentReference[oaicite:0]{index=0}.
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+---
 
-## Code scaffolding
+## Windows
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+Official Windows releases are published in the Saltshaker Releases repository.
 
-## Build
+Download the latest installer here:  
+https://github.com/fkribs/Saltshaker-Releases/releases
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+---
 
-## Running unit tests
+## MacOS
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+Official MacOS builds are available in the Saltshaker Releases repository.
 
-## Running end-to-end tests
+Supported architectures:
+- Intel (`x64`)
+- Apple Silicon (`arm64`)
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+Download the latest MacOS `.dmg` or `.zip` here:  
+https://github.com/fkribs/Saltshaker-Releases/releases
 
-## Further help
+> If MacOS blocks the app because it is from the internet, open **System Settings > Privacy & Security** and allow Saltshaker to run.
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+---
+
+## Linux (Unofficial)
+
+Linux builds are not officially supported at this time.
+
+However, advanced users may be able to run Saltshaker by cloning this repository and launching it manually using :contentReference[oaicite:1]{index=1} and :contentReference[oaicite:2]{index=2}.
+
+### Run from source
+
+```bash
+git clone https://github.com/fkribs/Saltshaker-Public.git
+cd Saltshaker-Public
+npm install
+npm start
