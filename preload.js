@@ -67,12 +67,18 @@ const salt = {
   },
 
   onPluginSettingsChanged(callback) {
-    ipcRenderer.on("plugin-settings.changed", (_e, payload) => callback(payload));
+    ipcRenderer.on("plugin-settings-changed", (_e, payload) => callback(payload));
+  },
+
+  launchApp(executablePath) {
+    return ipcRenderer.invoke("app:launch", executablePath);
   },
 
   on(event, callback) {
     return onAllowed(event, callback);
-  }
+  },
+
+  isDev: process.env.SALTSHAKER_IS_DEV === "1"
 };
 
 contextBridge.exposeInMainWorld("salt", salt);

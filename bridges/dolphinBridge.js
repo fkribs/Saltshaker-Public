@@ -51,6 +51,7 @@ module.exports = function registerDolphinBridge({ ipcMain, pluginEvents }) {
   }
 
   function emitIfRequested(name, payload) {
+    console.log("[dolphinBridge]", name, payload);
     if (anySubscriberWants(name)) {
       pluginEvents.emit("dolphin:event", { name, payload });
     }
@@ -129,6 +130,7 @@ module.exports = function registerDolphinBridge({ ipcMain, pluginEvents }) {
     });
 
     dolphinConnection.on(ConnectionEvent.MESSAGE, (message) => {
+      console.log("[dolphinBridge raw]", message.type, JSON.stringify(message).slice(0, 200));
       switch (message.type) {
         case DolphinMessageType.CONNECT_REPLY:
           break;

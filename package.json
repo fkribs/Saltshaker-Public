@@ -1,6 +1,6 @@
 {
   "name": "saltshaker-client",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "description": "A peer-to-peer voice platform with an open-source plugin system for games and real-time apps",
   "author": "Forrest Kribs",
   "main": "main.js",
@@ -8,9 +8,9 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "kill:electron": "taskkill /F /IM electron.exe /T 2>nul || exit /b 0",
-    "start:debug": "npm run kill:electron && set ELECTRON_ENABLE_LOGGING=true&& electron . --inspect=9230 --remote-debugging-port=9223",
-    "start:debug:brk": "npm run kill:electron && set ELECTRON_ENABLE_LOGGING=true&& electron . --inspect-brk=9230 --remote-debugging-port=9223",
+    "kill:electron": "node -e \"process.platform==='win32'?require('child_process').execSync('taskkill /F /IM electron.exe /T 2>nul',{stdio:'ignore'}):require('child_process').execSync('pkill -f electron || true',{stdio:'ignore'})\"",
+    "start:debug": "npm run kill:electron && ELECTRON_ENABLE_LOGGING=true electron . --inspect=9230 --remote-debugging-port=9223",
+    "start:debug:brk": "npm run kill:electron && ELECTRON_ENABLE_LOGGING=true electron . --inspect-brk=9230 --remote-debugging-port=9223",
     "build": "electron-builder",
     "publish": "electron-builder --publish always",
     "lint": "eslint src/"
@@ -63,7 +63,8 @@
       {
         "provider": "github",
         "owner": "fkribs",
-        "repo": "Saltshaker-Releases"
+        "repo": "Saltshaker-Releases",
+        "releaseType": "release"
       }
     ],
     "win": {
@@ -98,12 +99,25 @@
         {
           "target": "dmg",
           "arch": [
-            "x64"
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
           ]
         }
       ],
-      "icon": "src/assets/icon.png",
-      "artifactName": "Saltshaker-${version}-MacOS.dmg"
+      "icon": "assets/icon.png",
+      "artifactName": "Saltshaker-${version}-MacOS-${arch}.${ext}",
+      "category": "public.app-category.social-networking",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "hardenedRuntime": true
     },
     "compression": "store"
   }

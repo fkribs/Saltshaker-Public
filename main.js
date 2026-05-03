@@ -1,6 +1,8 @@
 const { app, ipcMain } = require("electron");
 const log = require("electron-log");
 const path = require("path");
+const os = require("os");
+const { spawn } = require("child_process");
 const { EventEmitter } = require("events");
 
 const WindowManager = require("./WindowManager");
@@ -10,8 +12,10 @@ const PluginSettingsManager = require("./PluginSettingsManager");
 
 const registerFileBridge = require("./bridges/fileBridge");
 const registerDolphinBridge = require("./bridges/dolphinBridge");
+const registerBrowserBridge = require("./bridges/browserBridge");
 
 const isDev = !app.isPackaged;
+if (isDev) process.env.SALTSHAKER_IS_DEV = "1";
 
 // -------------------- Logging bootstrap --------------------
 log.transports.file.level = "info";
@@ -48,6 +52,7 @@ let _pluginEventsWiredToRenderer = false;
 
 let fileBridge;
 let dolphinBridge;
+let browserBridge;
 
 // -------------------- Helpers --------------------
 function createMainWindow() {
@@ -67,10 +72,10 @@ function createMainWindow() {
 function setupManagers() {
   updateManager = updateManager || new UpdateManager();
   settingsManager = settingsManager || new PluginSettingsManager();
-  pluginManager = pluginManager || new PluginManager(windowManager, pluginEvents, settingsManager);
+  pluginManager = pluginManager || new PluginManager(windowManager, pluginEvents, settingsManager, { isDev });
 
   if (typeof pluginManager.setHostBridges === "function") {
-    pluginManager.setHostBridges({ fileBridge, dolphinBridge });
+    pluginManager.setHostBridges({ fileBridge, dolphinBridge, browserBridge });
   }
 }
 
@@ -131,7 +136,7 @@ function setupIpcMainListeners() {
   });
 
   ipcMain.handle("run-plugin", async (_event, pluginId) => {
-    return pluginManager.runInstalledPlugin(pluginId);
+    return pluginManager.switchToPlugin(pluginId);
   });
 
   ipcMain.handle("list-installed-plugins", async () => {
@@ -149,6 +154,24 @@ function setupIpcMainListeners() {
 
   ipcMain.handle("pluginSettings:getAll", async (_evt, pluginId) => {
     return await settingsManager.getAll(pluginId);
+  });
+
+  ipcMain.handle("app:launch", async (_evt, executablePath) => {
+    if (typeof executablePath !== "string" || !executablePath.trim()) {
+      return { ok: false, error: "Invalid path." };
+    }
+    const resolved = executablePath
+      .replace(/\{home\}/g, os.homedir())
+      .replace(/\//g, path.sep);
+    try {
+      const child = spawn(resolved, [], { detached: true, stdio: "ignore" });
+      child.unref();
+      log.info("[app:launch] launched:", resolved);
+      return { ok: true };
+    } catch (err) {
+      log.warn("[app:launch] failed:", err);
+      return { ok: false, error: err.message };
+    }
   });
 
   ipcMain.handle("pluginSettings:set", async (_evt, { pluginId, key, value }) => {
@@ -181,6 +204,11 @@ function setupBridges() {
   });
 
   dolphinBridge = registerDolphinBridge({
+    ipcMain,
+    pluginEvents,
+  });
+
+  browserBridge = registerBrowserBridge({
     ipcMain,
     pluginEvents,
   });
@@ -224,10 +252,14 @@ app.whenReady().then(() => {
   setupBridges();
 
   if (typeof pluginManager.setHostBridges === "function") {
-    pluginManager.setHostBridges({ fileBridge, dolphinBridge });
+    pluginManager.setHostBridges({ fileBridge, dolphinBridge, browserBridge });
   }
 
   setupIpcMainListeners();
+
+  windowManager?.window?.on("close", () => {
+    browserBridge?.closeAllWindows?.();
+  });
 
   try {
     log.info("[boot] invoking updateManager.checkForUpdates()");

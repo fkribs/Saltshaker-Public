@@ -1,14 +1,17 @@
 const fs = require("fs/promises");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
 const vm = require("vm");
+const { spawn } = require("child_process");
 const { EventEmitter } = require("events");
 const tar = require("tar");
 const log = require("electron-log");
 const { app } = require("electron");
 
 class PluginManager {
-  constructor(windowManager, pluginEvents, settingsManager) {
+  constructor(windowManager, pluginEvents, settingsManager, { isDev = false } = {}) {
+    this.isDev = isDev;
     this.installedPluginContexts = new Map();
     this.windowManager = windowManager;
     this.settingsManager = settingsManager;
@@ -22,6 +25,7 @@ class PluginManager {
 
     this.fileBridge = null;
     this.dolphinBridge = null;
+    this.browserBridge = null;
 
     this._contextsHydrated = false;
     this._wireGlobalRoutingOnce();
@@ -81,9 +85,10 @@ class PluginManager {
   // -------------------------------------------
   // Bridge injection
   // -------------------------------------------
-  setHostBridges({ fileBridge, dolphinBridge }) {
+  setHostBridges({ fileBridge, dolphinBridge, browserBridge }) {
     this.fileBridge = fileBridge;
     this.dolphinBridge = dolphinBridge;
+    this.browserBridge = browserBridge;
   }
 
   // -------------------------------------------
@@ -155,7 +160,11 @@ class PluginManager {
   // -------------------------------------------
   // Installation
   // -------------------------------------------
-  async installPlugin({ id, name, version, sha256, bytes, permissions = [], resources = [] }) {
+  async installPlugin({ id, name, version, sha256, bytes, permissions = [], resources = [], dev = false }) {
+    if (dev && !this.isDev) {
+      throw new Error(`Plugin ${id} is marked as dev-only and cannot be installed in production.`);
+    }
+
     await this.ensurePluginDir();
 
     const safeId = this.sanitizeId(id);
@@ -190,7 +199,8 @@ class PluginManager {
       version,
       sha256,
       installedAt: new Date().toISOString(),
-      entry
+      entry,
+      dev
     };
 
     await fs.writeFile(
@@ -244,6 +254,7 @@ class PluginManager {
       const metaPath = path.join(this.pluginsDir, d, "metadata.json");
       try {
         const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
+        if (meta.dev && !this.isDev) continue;
         plugins.push(meta);
       } catch {
       }
@@ -288,19 +299,26 @@ class PluginManager {
       throw new Error(`Plugin ${pluginId} is not installed.`);
     }
 
+    if (metadata.dev && !this.isDev) {
+      throw new Error(`Plugin ${pluginId} is dev-only and cannot run in production.`);
+    }
+
     const entryPath = path.join(pluginFolder, "dist", metadata.entry);
     const code = await fs.readFile(entryPath, "utf8");
 
-    return await this.loadAndRunPlugin(pluginId, code, metadata);
+    const context = await this.getInstalledPluginContext(pluginId);
+    return await this.loadAndRunPlugin(pluginId, code, metadata, context);
   }
 
   // -------------------------------------------
   // Sandbox Execution
   // -------------------------------------------
-  async loadAndRunPlugin(pluginId, pluginCode, metadata = null) {
+  async loadAndRunPlugin(pluginId, pluginCode, metadata = null, pluginContext = null) {
     log.info(`Activating plugin: ${pluginId}`);
     const inbound = new EventEmitter();
     const dolphinInboundChannels = new Set();
+    const browserInboundChannels = new Set();
+    const browserSubscriptions = new Set();
     const existing = this.activePlugins.get(pluginId);
     if (existing) {
       log.info(`Plugin ${pluginId} already active; disposing before restart`);
@@ -314,6 +332,8 @@ class PluginManager {
     }
 
     if (!metadata) metadata = { id: pluginId, name: pluginId };
+
+    const permissions = new Set(pluginContext?.permissions || []);
 
     if (!this.fileBridge || !this.dolphinBridge) {
       throw new Error("Host bridges not configured. Call pluginManager.setHostBridges(...) first.");
@@ -335,7 +355,8 @@ class PluginManager {
     const sandboxApi = {
       log: (...args) => log.info(`[plugin:${pluginId}]`, ...args),
 
-    
+      stop: () => this.stopPlugin(pluginId),
+
       setSession: (connectCode) => {
         if (disposing || disposed) return;
 
@@ -397,11 +418,27 @@ class PluginManager {
           readJson: (resourceId) => this.fileBridge.readJson(pluginId, resourceId)
         },
 
+        launchApp: async (executablePath) => {
+          if (!permissions.has("app.launch")) {
+            log.warn(`[plugin:${pluginId}] launchApp denied: missing app.launch permission`);
+            throw new Error("Permission denied: app.launch");
+          }
+          if (typeof executablePath !== "string" || !executablePath.trim()) {
+            throw new Error("Invalid executable path.");
+          }
+          const resolved = executablePath
+            .replace(/\{home\}/g, os.homedir())
+            .replace(/\//g, path.sep);
+          const child = spawn(resolved, [], { detached: true, stdio: "ignore" });
+          child.unref();
+          log.info(`[plugin:${pluginId}] launchApp:`, resolved);
+        },
+
         dolphin: {
           subscribe: async (options) => {
             const events = options?.events || [];
             for (const ev of events) {
-              dolphinSubscriptions.add(ev); 
+              dolphinSubscriptions.add(ev);
               dolphinInboundChannels.add(`dolphin:${ev}`);
             }
             return this.dolphinBridge.subscribe(pluginId, options);
@@ -414,6 +451,35 @@ class PluginManager {
             }
             return this.dolphinBridge.unsubscribe(pluginId, options);
           }
+        },
+
+        browser: {
+          openWindow: (options) => {
+            if (!permissions.has("bridge:browser.window")) {
+              throw new Error("Permission denied: bridge:browser.window");
+            }
+            return this.browserBridge?.openWindow(pluginId, options);
+          },
+          closeWindow: () => {
+            return this.browserBridge?.closeWindow(pluginId);
+          },
+          subscribe: async (options) => {
+            const events = options?.events || [];
+            for (const ev of events) {
+              browserSubscriptions.add(ev);
+              browserInboundChannels.add(`browser:${ev}`);
+            }
+            return this.browserBridge?.subscribe(pluginId, options);
+          },
+          unsubscribe: async (options) => {
+            const events = options?.events || [];
+            for (const ev of events) {
+              browserSubscriptions.delete(ev);
+              browserInboundChannels.delete(`browser:${ev}`);
+            }
+            return this.browserBridge?.unsubscribe(pluginId, options);
+          },
+          getTitle: () => this.browserBridge?.getTitle(pluginId) ?? null,
         }
       }
     };
@@ -422,7 +488,20 @@ class PluginManager {
       module: { exports: {} },
       exports: {},
       api: sandboxApi,
-      plugin: metadata
+      plugin: metadata,
+      URL,
+      URLSearchParams,
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      queueMicrotask,
+      console: {
+        log: (...a) => log.info(`[plugin:${pluginId}]`, ...a),
+        warn: (...a) => log.warn(`[plugin:${pluginId}]`, ...a),
+        error: (...a) => log.error(`[plugin:${pluginId}]`, ...a),
+        info: (...a) => log.info(`[plugin:${pluginId}]`, ...a),
+      },
     };
     context.global = context;
 
@@ -459,6 +538,14 @@ class PluginManager {
         }
 
         try {
+          if (browserSubscriptions.size) {
+            await sandboxApi.host.browser.unsubscribe({ events: [...browserSubscriptions] });
+          }
+        } catch (e) {
+          log.warn(`Plugin ${pluginId} youtube.unsubscribe failed`, e);
+        }
+
+        try {
           for (const d of disposers.splice(0)) {
             try { d(); } catch (e) { log.warn(`Plugin ${pluginId} disposer failed`, e); }
           }
@@ -479,6 +566,7 @@ class PluginManager {
         id: pluginId,
         inbound,
         dolphinInboundChannels,
+        browserInboundChannels,
         startedAt: new Date(),
         get isDisposing() { return disposing; },
         get isDisposed() { return disposed; },
@@ -532,6 +620,18 @@ class PluginManager {
 
       for (const active of this.activePlugins.values()) {
         if (active?.dolphinInboundChannels?.has(channel)) {
+          active.inbound.emit(channel, payload);
+        }
+      }
+    });
+
+    this.pluginEvents.on("browser:event", (msg) => {
+      const name = msg?.name;
+      const payload = msg?.payload;
+      if (!name) return;
+      const channel = `browser:${name}`;
+      for (const active of this.activePlugins.values()) {
+        if (active?.browserInboundChannels?.has(channel)) {
           active.inbound.emit(channel, payload);
         }
       }

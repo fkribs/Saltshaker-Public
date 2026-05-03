@@ -2,23 +2,66 @@ const fs = require("fs/promises");
 const path = require("path");
 const os = require("os");
 
+function getResourcePathForPlatform(resource) {
+  const platform = process.platform;
+
+  if (platform === "darwin") {
+    return resource.macPath || resource.path;
+  }
+
+  if (platform === "win32") {
+    return resource.winPath || resource.path;
+  }
+
+  if (platform === "linux") {
+    return resource.linuxPath || resource.path;
+  }
+
+  return resource.path;
+}
+
+function isSubPath(parent, child) {
+  const relative = path.relative(parent, child);
+  return (
+    (relative &&
+      !relative.startsWith("..") &&
+      !path.isAbsolute(relative)) ||
+    relative === ""
+  );
+}
+
 function resolveResourcePath(resource) {
-  if (!resource?.path) throw new Error("Resource missing path");
+  const rawPath = getResourcePathForPlatform(resource);
+  if (!rawPath) throw new Error("Resource missing path");
+
+  const home = path.resolve(os.homedir());
+
+  let appData;
+  switch (process.platform) {
+    case "darwin":
+      appData = path.join(home, "Library", "Application Support");
+      break;
+    case "linux":
+      appData = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
+      break;
+    default:
+      appData = path.join(home, "AppData", "Roaming");
+      break;
+  }
 
   const vars = {
-    "{home}": os.homedir(),
-    "{appData}": path.join(os.homedir(), "AppData", "Roaming")
+    "{home}": home,
+    "{appData}": appData
   };
 
-  let resolved = resource.path;
+  let resolved = rawPath;
   for (const [key, value] of Object.entries(vars)) {
     resolved = resolved.replaceAll(key, value);
   }
 
   resolved = path.resolve(resolved);
 
-  const home = path.resolve(os.homedir());
-  if (!resolved.toLowerCase().startsWith(home.toLowerCase())) {
+  if (!isSubPath(home, resolved)) {
     throw new Error("Denied: path outside allowed directory");
   }
 
